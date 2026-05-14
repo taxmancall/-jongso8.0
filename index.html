@@ -1048,10 +1048,12 @@ td.refund-val{color:var(--blue)!important}
   <!-- 기납부세액 -->
   <div class="section prepaid-sec">
     <div class="sec-title"><i class="ti ti-receipt ti-pur"></i>기납부세액 <span class="hint" style="font-weight:400;font-size:10px;color:#7b1fa2">(차감)</span></div>
-    <div class="irow"><label>중간예납세액</label><input class="num-input" id="prepaid1" placeholder="0" oninput="fi(this);calc()"><span class="unit">원</span></div>
-    <div class="irow"><label>원천징수세액 <span class="hint">(사업소득 3.3%)</span></label><input class="num-input" id="prepaid2" placeholder="0" oninput="fi(this);calc()"><span class="unit">원</span></div>
+    <div class="irow"><label>중간예납세액 <span class="hint">(국세만)</span></label><input class="num-input" id="prepaid1" placeholder="0" oninput="fi(this);calc()"><span class="unit">원</span></div>
+    <div class="irow"><label>원천징수세액 <span class="hint">(국세 3%, 사업소득)</span></label><input class="num-input" id="prepaid2" placeholder="0" oninput="fi(this);calc()"><span class="unit">원</span></div>
+    <div class="irow"><label>원천징수 지방소득세 <span class="hint" id="d_prepaidLocHint">(자동: 국세×10%)</span></label><input class="num-input" id="prepaidLoc" placeholder="자동계산" oninput="fi(this);calc()"><span class="unit">원</span></div>
     <div class="divider"></div>
-    <div class="calc-row"><label>기납부세액 합계</label><span class="val pur" id="d_prepaid">0원</span></div>
+    <div class="calc-row"><label>기납부 국세 합계</label><span class="val pur" id="d_prepaid">0원</span></div>
+    <div class="calc-row"><label class="sub">기납부 지방세 합계</label><span class="val pur" id="d_prepaidLoc" style="font-size:13px">0원</span></div>
   </div>
 </div>
 
@@ -1326,8 +1328,8 @@ td.refund-val{color:var(--blue)!important}
           <td id="r_fin">—</td>
           <td id="ra_fin" class="dim">—</td>
         </tr>
-        <!-- 9. ⑧ 기납부세액 -->
-        <tr class="prepaid-row"><td>⑧ 기납부세액 <span class="label-note">(중간예납 + 원천징수)</span></td>
+        <!-- 9. ⑧ 기납부세액 (국세) -->
+        <tr class="prepaid-row"><td>⑧ 기납부세액 <span class="label-note">(중간예납 + 원천징수, 국세분)</span></td>
           <td id="r_prepaid">—</td>
           <td id="ra_prepaid" class="dim">—</td>
         </tr>
@@ -1341,8 +1343,16 @@ td.refund-val{color:var(--blue)!important}
           <td id="r_rural">—</td>
           <td id="ra_rural" class="dim">—</td>
         </tr>
-        <!-- 12. ⑪ 지방소득세 -->
-        <tr class="local-row"><td>⑪ 지방소득세 <span class="label-note">(결정세액×10%, 5월 지방세 별도신고)</span></td>
+        <!-- 12. ⑪ 지방소득세 (산출-기납부) -->
+        <tr class="local-row"><td>⑪ 지방소득세 산출세액 <span class="label-note">(결정세액×10%)</span></td>
+          <td id="r_locRaw">—</td>
+          <td id="ra_locRaw" class="dim">—</td>
+        </tr>
+        <tr class="local-row"><td>　└ 기납부 지방소득세 <span class="label-note">(원천징수 0.3%분)</span></td>
+          <td id="r_locPrepaid">—</td>
+          <td id="ra_locPrepaid" class="dim">—</td>
+        </tr>
+        <tr class="local-row"><td><b>⑪ 납부할 지방소득세</b> <span class="label-note">(5월 지방세 별도신고)</span></td>
           <td id="r_loc">—</td>
           <td id="ra_loc" class="dim">—</td>
         </tr>
@@ -2722,6 +2732,19 @@ function calc(){
   const std=stdRadio?parseInt(stdRadio.value):70000;
   const empC=n('empC'),othC=n('otherC');
   const prepaid=n('prepaid1')+n('prepaid2');
+  /* 원천징수 지방소득세: 사용자 직접입력 우선, 비어있으면 자동계산 (국세 원천징수 × 10%, 지방세법 §103의5)
+     ※ 중간예납세액은 국세만 존재 (지방세법상 중간예납 별도 없음) */
+  const prepaidLocInput=document.getElementById('prepaidLoc');
+  const prepaidLocRaw=prepaidLocInput?prepaidLocInput.value.replace(/,/g,'').trim():'';
+  const prepaidLocAuto=Math.round(n('prepaid2')/10); // 국세 원천징수 × 10%
+  const prepaidLoc=prepaidLocRaw===''?prepaidLocAuto:parseInt(prepaidLocRaw)||0;
+  /* 자동값 힌트 갱신 */
+  const locHint=document.getElementById('d_prepaidLocHint');
+  if(locHint){
+    locHint.textContent=prepaidLocRaw===''
+      ?'(자동: '+prepaidLocAuto.toLocaleString()+'원)'
+      :'(직접입력)';
+  }
 
   /* 기본 계산 */
   /* 중특감면 (조특법 §7①):
@@ -2790,9 +2813,19 @@ function calc(){
   const payableNational=B.fin-prepaid; // 납부할 국세 (= ⑦-⑧)
   setDisp('r_payable',payableNational);
   s('r_rural',B.ruralTax); // 농어촌특별세 (별도)
-  s('r_loc',B.loc); // 지방소득세 (별도, B.fin × 10%)
-  /* 5월에 납부하실 총 세금 = 납부할 국세 + 농특세 + 지방세 */
-  const total5May=payableNational+B.ruralTax+B.loc;
+  /* ⑪ 지방소득세 흐름 (지방세법 §103의3 세율 10% + §103의5 원천징수 공제)
+     산출 = 결정세액 × 10%
+     납부할 지방세 = 산출 - 기납부 지방세 (음수면 환급) */
+  const locRaw=B.loc; // 산출세액 (= fin × 10%)
+  const locPayable=locRaw-prepaidLoc; // 납부할 지방소득세
+  s('r_locRaw',locRaw);
+  s('r_locPrepaid',prepaidLoc);
+  setDisp('r_loc',locPayable);
+  /* 환급(음수) 시 색상 */
+  const rLocEl=document.getElementById('r_loc');
+  if(locPayable<0){rLocEl.style.color='var(--blue)';}else{rLocEl.style.color='';}
+  /* 5월에 납부하실 총 세금 = 납부할 국세 + 농특세 + 납부할 지방세 */
+  const total5May=payableNational+B.ruralTax+locPayable;
   setDisp('r_total5',total5May);
   /* 환급이면 색상 표시 */
   const payableEl=document.getElementById('r_payable');
@@ -2800,6 +2833,7 @@ function calc(){
   const t5El=document.getElementById('r_total5');
   if(total5May<0){t5El.style.color='var(--blue)';}else{t5El.style.color='';}
   setDisp('d_prepaid',prepaid);
+  setDisp('d_prepaidLoc',prepaidLoc);
   document.getElementById('r_rat').textContent=pct(income,rev*shareRatio);
   /* 실효세율 = (결정세액 + 농특세 + 지방세) ÷ 소득금액 — 기납부 차감 전 전체 세부담률 (B.tot) */
   document.getElementById('r_eff').textContent=income>0?(B.tot/income*100).toFixed(1)+'%':'0.0%';
@@ -2853,7 +2887,7 @@ function calc(){
     const diff=B.tot-A.tot;lastDiff=diff;
     lastFinalAdj=adjFinalPayable;
 
-    ['ra_inc','ra_ded','ra_base','ra_tax','ra_sme','ra_credtot','ra_empc','ra_cred','ra_fin','ra_prepaid','ra_payable','ra_rural','ra_loc','ra_total5','ra_rat','ra_eff']
+    ['ra_inc','ra_ded','ra_base','ra_tax','ra_sme','ra_credtot','ra_empc','ra_cred','ra_fin','ra_prepaid','ra_payable','ra_rural','ra_locRaw','ra_locPrepaid','ra_loc','ra_total5','ra_rat','ra_eff']
       .forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('dim');});
 
     setDisp('d_adjBase',A.taxBase);
@@ -2882,8 +2916,15 @@ function calc(){
     const adjPayableNational=A.fin-prepaid;
     setDisp('ra_payable',adjPayableNational);
     s('ra_rural',A.ruralTax);
-    s('ra_loc',A.loc);
-    const adjTotal5May=adjPayableNational+A.ruralTax+A.loc;
+    /* 조정 후 지방소득세 흐름 (산출 - 기납부) */
+    const adjLocRaw=A.loc;
+    const adjLocPayable=adjLocRaw-prepaidLoc;
+    s('ra_locRaw',adjLocRaw);
+    s('ra_locPrepaid',prepaidLoc);
+    setDisp('ra_loc',adjLocPayable);
+    const raLocEl=document.getElementById('ra_loc');
+    if(adjLocPayable<0){raLocEl.style.color='var(--blue)';}else{raLocEl.style.color='';}
+    const adjTotal5May=adjPayableNational+A.ruralTax+adjLocPayable;
     setDisp('ra_total5',adjTotal5May);
     /* 환급이면 색상 */
     const raPayableEl=document.getElementById('ra_payable');
@@ -3070,7 +3111,7 @@ function fallbackCopy(text,fb){
 
 /* ══ 초기화 ══ */
 function resetAll(){
-  ['rev','cogs','sga','nonOpInc','nonOpExp','adj','adjMinus','pension','yellow','otherD','empC','empC2','pensS','otherC','prepaid1','prepaid2','bizName','bizBirth','finInc','pensionInc','laborInc','etcInc','rentalInc','rndCurrent','rndPrev','socialInsC']
+  ['rev','cogs','sga','nonOpInc','nonOpExp','adj','adjMinus','pension','yellow','otherD','empC','empC2','pensS','otherC','prepaid1','prepaid2','prepaidLoc','bizName','bizBirth','finInc','pensionInc','laborInc','etcInc','rentalInc','rndCurrent','rndPrev','socialInsC']
     .forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('smeRate').value='';
   document.getElementById('bizType').value='sole';document.getElementById('shareRatioField').style.display='none';document.getElementById('shareRatio').value='50';lastShareRatio=1;
@@ -3089,7 +3130,7 @@ function resetAll(){
   const fr=document.getElementById('fin-derived-row');if(fr)fr.style.display='none';
   document.getElementById('d_personalDed').textContent='150만원';
   appliedAdj=0;adjApplied=false;lastIncome=0;lastAdjIncome=0;lastRev=0;lastTot=0;lastTotAdj=0;lastDiff=0;lastFinal=0;lastFinalAdj=0;
-  ['ra_inc','ra_ded','ra_base','ra_tax','ra_sme','ra_credtot','ra_empc','ra_empc_req','ra_cred','ra_fin','ra_prepaid','ra_payable','ra_rural','ra_loc','ra_total5','ra_rat','ra_eff','ra_mintax','r_empc_req']
+  ['ra_inc','ra_ded','ra_base','ra_tax','ra_sme','ra_credtot','ra_empc','ra_empc_req','ra_cred','ra_fin','ra_prepaid','ra_payable','ra_rural','ra_locRaw','ra_locPrepaid','ra_loc','ra_total5','ra_rat','ra_eff','ra_mintax','r_empc_req']
     .forEach(id=>{const el=document.getElementById(id);if(el){el.textContent='—';el.classList.add('dim');delete el.dataset.man;delete el.dataset.won;}});
   document.getElementById('ra_inc').textContent='미적용';
   document.getElementById('r_diff').textContent='적용 버튼을 눌러주세요';
